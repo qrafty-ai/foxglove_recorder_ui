@@ -2,3 +2,7 @@
 .pixi/*
 !.pixi/config.toml
 .sisyphus/
+build/
+install/
+log/
+node_modules/
