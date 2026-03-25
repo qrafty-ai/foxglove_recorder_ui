@@ -30,7 +30,7 @@ _build_panel_compile = "cd foxglove-extension && npm run build"
 
 # Test commands
 test = { depends-on = ["test_ros", "test_panel"] }
-test_ros = "cd ros2_ws && colcon test --packages-select recorder_companion recorder_interfaces"
+test_ros = "cd ros2_ws && colcon test --packages-select recorder_companion recorder_msgs"
 test_panel = "cd foxglove-extension && npm test"
 
 # QA commands

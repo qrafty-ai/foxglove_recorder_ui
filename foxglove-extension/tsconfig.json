@@ -6,6 +6,11 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "lib": ["dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "ignoreDeprecations": "6.0",
     "composite": false,
     "declaration": false,
     "noFallthroughCasesInSwitch": true,
