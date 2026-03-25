@@ -18,6 +18,21 @@ c-compiler = "*"
 cxx-compiler = "*"
 
 [tasks]
+# Setup
 setup = "bash scripts/setup.sh"
-build = "colcon build --symlink-install"
-test = "colcon test"
+
+# Build commands
+build = { depends-on = ["build_ros", "build_panel"] }
+build_ros = "cd ros2_ws && colcon build --symlink-install --packages-up-to recorder_companion"
+build_panel = { depends-on = ["_build_panel_install", "_build_panel_compile"] }
+_build_panel_install = "cd foxglove-extension && npm install --no-fund --no-audit"
+_build_panel_compile = "cd foxglove-extension && npm run build"
+
+# Test commands
+test = { depends-on = ["test_ros", "test_panel"] }
+test_ros = "cd ros2_ws && colcon test --packages-select recorder_companion recorder_interfaces"
+test_panel = "cd foxglove-extension && npm test"
+
+# QA commands
+qa = { depends-on = ["build", "test", "qa_integration"] }
+qa_integration = "bash scripts/qa-integration.sh"
