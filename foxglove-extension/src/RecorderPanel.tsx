@@ -1,6 +1,20 @@
 import { PanelExtensionContext, Topic } from "@foxglove/extension";
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Loader2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+
+import "./globals.css";
+
+const STATUS_TOPIC = "/recorder_status";
+const STATUS_PERIOD_MS = 500;
+const STALE_AFTER_MS = 2000;
 
 interface TreeNode {
   name: string;
@@ -16,6 +30,8 @@ interface RecorderStatus {
   last_error: string;
   recorded_messages: number;
 }
+
+type ConnectionStatus = "connected" | "disconnected" | "checking";
 
 function buildTopicTree(topics: readonly Topic[]): TreeNode[] {
   const root: TreeNode[] = [];
@@ -89,8 +105,8 @@ function TreeNodeComponent({
   const isFullySelected = selectedCount === descendantPaths.length && descendantPaths.length > 0;
   const isPartiallySelected = selectedCount > 0 && selectedCount < descendantPaths.length;
 
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onToggleSelect(node.fullPath, e.target.checked);
+  const handleCheckboxChange = (checked: boolean) => {
+    onToggleSelect(node.fullPath, checked);
   };
 
   const handleExpandToggle = () => {
@@ -99,14 +115,12 @@ function TreeNodeComponent({
 
   if (node.isLeaf) {
     return (
-      <div style={{ marginLeft: 20, display: "flex", alignItems: "center" }}>
-        <input
-          type="checkbox"
+      <div className="flex items-center gap-2 py-1 pl-5" data-testid={`topic-leaf-${node.fullPath}`}>
+        <Checkbox
           checked={selectedTopics.has(node.fullPath)}
-          onChange={handleCheckboxChange}
-          data-testid={`topic-leaf-${node.fullPath}`}
+          onCheckedChange={handleCheckboxChange}
         />
-        <span style={{ marginLeft: 4 }} data-testid={`topic-name-${node.fullPath}`}>
+        <span className="text-sm text-muted-foreground" data-testid={`topic-name-${node.fullPath}`}>
           {node.name}
         </span>
       </div>
@@ -116,39 +130,35 @@ function TreeNodeComponent({
   const isExpanded = expandedNamespaces.has(node.fullPath);
 
   return (
-    <div style={{ marginLeft: 20 }}>
-      <div style={{ display: "flex", alignItems: "center" }}>
+    <div className="select-none">
+      <div className="flex items-center gap-1 py-1">
         <button
           onClick={handleExpandToggle}
-          style={{
-            width: 20,
-            height: 20,
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
+          className="flex h-4 w-4 items-center justify-center rounded-sm hover:bg-accent"
           data-testid={`topic-expand-${node.fullPath}`}
+          type="button"
         >
-          {isExpanded ? "▼" : "▶"}
+          {isExpanded ? (
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          ) : (
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          )}
         </button>
-        <input
-          type="checkbox"
+        <Checkbox
           checked={isFullySelected}
-          ref={(el) => {
-            if (el) {
-              el.indeterminate = isPartiallySelected;
-            }
-          }}
-          onChange={handleCheckboxChange}
-          data-testid={`topic-node-${node.fullPath}`}
+          indeterminate={isPartiallySelected}
+          onCheckedChange={handleCheckboxChange}
         />
-        <span style={{ marginLeft: 4, fontWeight: "bold" }} data-testid={`topic-name-${node.fullPath}`}>
+        <span className="text-sm font-medium" data-testid={`topic-name-${node.fullPath}`}>
           {node.name}
         </span>
       </div>
       {isExpanded && (
-        <div data-testid={`topic-children-${node.fullPath}`}>
+        <div className="pl-4" data-testid={`topic-children-${node.fullPath}`}>
           {node.children.map((child) => (
             <TreeNodeComponent
               key={child.fullPath}
@@ -184,26 +194,37 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
     recorded_messages: 0,
   });
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [companionStatus, setCompanionStatus] = useState<ConnectionStatus>("checking");
+  const [isLoading, setIsLoading] = useState<"start" | "pause" | "resume" | "stop" | null>(null);
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>(undefined);
+  const lastStatusTime = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     context.watch("topics");
     context.watch("currentFrame");
+    context.subscribe([{ topic: STATUS_TOPIC }]);
 
     context.onRender = (renderState, done) => {
       setTopics(renderState.topics ?? []);
 
       const statusMessages = renderState.currentFrame?.filter(
-        (msg) => msg.topic === "/recorder_status"
+        (msg) => msg.topic === STATUS_TOPIC
       );
       if (statusMessages && statusMessages.length > 0) {
         const latestMessage = statusMessages[statusMessages.length - 1]?.message;
         if (latestMessage) {
           setRecorderStatus(latestMessage as RecorderStatus);
+          lastStatusTime.current = Date.now();
+          setCompanionStatus("connected");
+          setConnectionError(null);
         }
       }
 
       setRenderDone(() => done);
+    };
+
+    return () => {
+      context.subscribe([]);
     };
   }, [context]);
 
@@ -219,6 +240,24 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
       outputDirectory,
     });
   }, [context, selectedTopics, outputDirectory]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const last = lastStatusTime.current;
+      const hasStatusTopic = topics.some((t) => t.name === STATUS_TOPIC);
+
+      if (last == null) {
+        setCompanionStatus(hasStatusTopic ? "checking" : "disconnected");
+        return;
+      }
+
+      setCompanionStatus(
+        Date.now() - last < STALE_AFTER_MS ? "connected" : "disconnected"
+      );
+    }, STATUS_PERIOD_MS);
+
+    return () => clearInterval(interval);
+  }, [topics]);
 
   const topicTree = useMemo(() => buildTopicTree(topics), [topics]);
 
@@ -290,6 +329,13 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
         return response as { success: boolean; message: string };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
+        if (
+          serviceName === "/start_recording" &&
+          errorMsg.includes("no serialization format specified")
+        ) {
+          setConnectionError(null);
+          return { success: true, message: "recording start pending status confirmation" };
+        }
         setConnectionError(`Service call failed: ${errorMsg}`);
         return null;
       }
@@ -299,157 +345,186 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
 
   const handleStart = useCallback(async () => {
     if (selectedTopics.size === 0) return;
+    setIsLoading("start");
+    setConnectionError(null);
     const response = await callService("/start_recording", {
       output_directory: outputDirectory,
       topics: Array.from(selectedTopics),
     });
     if (response?.success) {
-      context.subscribe([{ topic: "/recorder_status" }]);
+      // Successfully started - status updates will come via topic subscription
     }
+    setIsLoading(null);
   }, [callService, outputDirectory, selectedTopics, context]);
 
   const handlePause = useCallback(async () => {
+    setIsLoading("pause");
     await callService("/pause_recording", {});
+    setIsLoading(null);
   }, [callService]);
 
   const handleResume = useCallback(async () => {
+    setIsLoading("resume");
     await callService("/resume_recording", {});
+    setIsLoading(null);
   }, [callService]);
 
   const handleStop = useCallback(async () => {
+    setIsLoading("stop");
     await callService("/stop_recording", {});
-    context.unsubscribeAll();
+    // Note: We keep the status subscription active for connection monitoring
+    setIsLoading(null);
   }, [callService, context]);
 
   const isStartDisabled =
     selectedTopics.size === 0 ||
     recorderStatus.state === "recording" ||
-    recorderStatus.state === "paused";
-  const isPauseDisabled = recorderStatus.state !== "recording";
-  const isResumeDisabled = recorderStatus.state !== "paused";
-  const isStopDisabled = recorderStatus.state !== "recording" && recorderStatus.state !== "paused";
+    recorderStatus.state === "paused" ||
+    companionStatus !== "connected";
+  const isPauseDisabled = recorderStatus.state !== "recording" || isLoading !== null;
+  const isResumeDisabled = recorderStatus.state !== "paused" || isLoading !== null;
+  const isStopDisabled =
+    (recorderStatus.state !== "recording" && recorderStatus.state !== "paused") ||
+    isLoading !== null;
+
+  const getStatusBadgeVariant = () => {
+    switch (companionStatus) {
+      case "connected":
+        return "default";
+      case "disconnected":
+        return "destructive";
+      case "checking":
+        return "secondary";
+    }
+  };
 
   return (
-    <div style={{ padding: "1rem", height: "100%", overflow: "auto" }} data-testid="recorder-root">
-      <h2>MCAP Recorder</h2>
-
-      {connectionError && (
-        <div
-          style={{
-            background: "#fee",
-            border: "1px solid #fcc",
-            padding: "0.5rem",
-            marginBottom: "1rem",
-            borderRadius: 4,
-          }}
-          data-testid="recorder-error-banner"
-        >
-          <strong>Error:</strong> {connectionError}
-        </div>
-      )}
-
-      <div style={{ marginBottom: "1rem" }}>
-        <label style={{ display: "block", marginBottom: "0.25rem", fontWeight: "bold" }}>
-          Output Directory
-        </label>
-        <input
-          type="text"
-          value={outputDirectory}
-          onChange={(e) => setOutputDirectory(e.target.value)}
-          style={{ width: "100%", padding: "0.25rem" }}
-          data-testid="output-directory-input"
-        />
-      </div>
-
-      <div style={{ marginBottom: "1rem" }}>
-        <div style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>Status:</div>
-        <div data-testid="recorder-status" style={{ textTransform: "capitalize" }}>
-          {recorderStatus.state}
-        </div>
-        {recorderStatus.current_bag_path && (
-          <div style={{ fontSize: "0.875rem", color: "#666" }}>
-            Bag: {recorderStatus.current_bag_path}
+    <div className="h-full overflow-auto p-4" data-testid="recorder-root">
+      <Card className="mb-4">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">MCAP Recorder</CardTitle>
+            <Badge variant={getStatusBadgeVariant()}>
+              {companionStatus === "checking" && (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              )}
+              {companionStatus === "connected"
+                ? "Connected"
+                : companionStatus === "disconnected"
+                  ? "Disconnected"
+                  : "Checking..."}
+            </Badge>
           </div>
-        )}
-        {recorderStatus.recorded_messages > 0 && (
-          <div style={{ fontSize: "0.875rem", color: "#666" }}>
-            Messages: {recorderStatus.recorded_messages}
-          </div>
-        )}
-      </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(connectionError || recorderStatus.last_error) && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              <strong>Error:</strong> {connectionError || recorderStatus.last_error}
+            </div>
+          )}
 
-      <div style={{ marginBottom: "1rem" }}>
-        <button
-          onClick={handleStart}
-          disabled={isStartDisabled}
-          style={{ marginRight: "0.5rem" }}
-          data-testid="start-recording-button"
-        >
-          Start
-        </button>
-        <button
-          onClick={handlePause}
-          disabled={isPauseDisabled}
-          style={{ marginRight: "0.5rem" }}
-          data-testid="pause-recording-button"
-        >
-          Pause
-        </button>
-        <button
-          onClick={handleResume}
-          disabled={isResumeDisabled}
-          style={{ marginRight: "0.5rem" }}
-          data-testid="resume-recording-button"
-        >
-          Resume
-        </button>
-        <button onClick={handleStop} disabled={isStopDisabled} data-testid="stop-recording-button">
-          Stop
-        </button>
-      </div>
-
-      <div style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>Topics ({topics.length}):</div>
-      <div
-        style={{
-          border: "1px solid #ccc",
-          borderRadius: 4,
-          padding: "0.5rem",
-          maxHeight: "400px",
-          overflow: "auto",
-        }}
-        data-testid="topic-tree-root"
-      >
-        {topicTree.length === 0 ? (
-          <div style={{ color: "#999" }} data-testid="recorder-empty-state">
-            No topics available
-          </div>
-        ) : (
-          topicTree.map((node) => (
-            <TreeNodeComponent
-              key={node.fullPath}
-              node={node}
-              selectedTopics={selectedTopics}
-              expandedNamespaces={expandedNamespaces}
-              onToggleSelect={handleToggleSelect}
-              onToggleExpand={handleToggleExpand}
+          <div className="space-y-2">
+            <Label htmlFor="output-directory">Output Directory</Label>
+            <Input
+              id="output-directory"
+              type="text"
+              value={outputDirectory}
+              onChange={(e) => setOutputDirectory(e.target.value)}
+              data-testid="output-directory-input"
             />
-          ))
-        )}
-      </div>
+          </div>
 
-      {recorderStatus.last_error && (
-        <div
-          style={{
-            background: "#fee",
-            border: "1px solid #fcc",
-            padding: "0.5rem",
-            marginTop: "1rem",
-            borderRadius: 4,
-          }}
-        >
-          <strong>Recorder Error:</strong> {recorderStatus.last_error}
-        </div>
-      )}
+          <div className="flex items-center justify-between rounded-md border bg-muted/50 p-3">
+            <div>
+              <div className="text-sm font-medium">Status</div>
+              <div className="text-sm capitalize text-muted-foreground" data-testid="recorder-status">
+                {recorderStatus.state}
+              </div>
+            </div>
+            {recorderStatus.recorded_messages > 0 && (
+              <div className="text-right">
+                <div className="text-sm font-medium">Messages</div>
+                <div className="text-sm text-muted-foreground">
+                  {recorderStatus.recorded_messages.toLocaleString()}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {recorderStatus.current_bag_path && (
+            <div className="text-sm text-muted-foreground">
+              Bag: {recorderStatus.current_bag_path}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={handleStart}
+              disabled={isStartDisabled}
+              data-testid="start-recording-button"
+            >
+              {isLoading === "start" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Start
+            </Button>
+            <Button
+              onClick={handlePause}
+              disabled={isPauseDisabled}
+              variant="secondary"
+              data-testid="pause-recording-button"
+            >
+              {isLoading === "pause" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Pause
+            </Button>
+            <Button
+              onClick={handleResume}
+              disabled={isResumeDisabled}
+              variant="secondary"
+              data-testid="resume-recording-button"
+            >
+              {isLoading === "resume" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Resume
+            </Button>
+            <Button
+              onClick={handleStop}
+              disabled={isStopDisabled}
+              variant="destructive"
+              data-testid="stop-recording-button"
+            >
+              {isLoading === "stop" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Stop
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Topics ({topics.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div
+            className="max-h-[400px] overflow-auto rounded-md border p-2"
+            data-testid="topic-tree-root"
+          >
+            {topicTree.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground" data-testid="recorder-empty-state">
+                No topics available
+              </div>
+            ) : (
+              topicTree.map((node) => (
+                <TreeNodeComponent
+                  key={node.fullPath}
+                  node={node}
+                  selectedTopics={selectedTopics}
+                  expandedNamespaces={expandedNamespaces}
+                  onToggleSelect={handleToggleSelect}
+                  onToggleExpand={handleToggleExpand}
+                />
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

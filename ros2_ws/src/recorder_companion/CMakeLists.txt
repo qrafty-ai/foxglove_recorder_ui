@@ -6,11 +6,10 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(boost_process CONFIG REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(rosbag2_cpp REQUIRED)
-find_package(rosbag2_transport REQUIRED)
-find_package(rosbag2_storage REQUIRED)
-find_package(recorder_interfaces REQUIRED)
+find_package(recorder_msgs REQUIRED)
+find_package(rosbag2_interfaces REQUIRED)
 
 add_executable(recorder_companion_node
   src/recorder_companion_node.cpp
@@ -23,12 +22,11 @@ target_include_directories(recorder_companion_node PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(recorder_companion_node
-  rclcpp
-  rosbag2_cpp
-  rosbag2_transport
-  rosbag2_storage
-  recorder_interfaces
+target_link_libraries(recorder_companion_node PUBLIC
+  ${recorder_msgs_TARGETS}
+  ${rosbag2_interfaces_TARGETS}
+  rclcpp::rclcpp
+  Boost::process
 )
 
 install(TARGETS recorder_companion_node
