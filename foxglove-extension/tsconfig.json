@@ -5,7 +5,7 @@
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "./dist",
-    "lib": ["dom"],
+    "lib": ["dom", "es2019"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

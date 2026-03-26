@@ -8,20 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+
+import { TopicSelectorSection } from "@/components/TopicSelectorSection";
 
 import "./globals.css";
 
 const STATUS_TOPIC = "/recorder_status";
 const STATUS_PERIOD_MS = 500;
 const STALE_AFTER_MS = 2000;
-
-interface TreeNode {
-  name: string;
-  fullPath: string;
-  isLeaf: boolean;
-  children: TreeNode[];
-}
 
 interface RecorderStatus {
   state: "idle" | "recording" | "paused" | "error";
@@ -33,155 +27,12 @@ interface RecorderStatus {
 
 type ConnectionStatus = "connected" | "disconnected" | "checking";
 
-function buildTopicTree(topics: readonly Topic[]): TreeNode[] {
-  const root: TreeNode[] = [];
-  const nodeMap = new Map<string, TreeNode>();
-
-  topics.forEach((topic) => {
-    const parts = topic.name.split("/").filter(Boolean);
-    let currentPath = "";
-
-    parts.forEach((part, index) => {
-      const parentPath = currentPath;
-      currentPath = currentPath ? `${currentPath}/${part}` : `/${part}`;
-
-      if (!nodeMap.has(currentPath)) {
-        const node: TreeNode = {
-          name: part,
-          fullPath: currentPath,
-          isLeaf: index === parts.length - 1,
-          children: [],
-        };
-        nodeMap.set(currentPath, node);
-
-        if (parentPath === "") {
-          root.push(node);
-        } else {
-          const parent = nodeMap.get(parentPath);
-          if (parent) {
-            parent.children.push(node);
-          }
-        }
-      }
-    });
-  });
-
-  root.sort((a, b) => a.name.localeCompare(b.name));
-  nodeMap.forEach((node) => {
-    node.children.sort((a, b) => a.name.localeCompare(b.name));
-  });
-
-  return root;
-}
-
-function getAllDescendantPaths(node: TreeNode): string[] {
-  const paths: string[] = [];
-  if (node.isLeaf) {
-    paths.push(node.fullPath);
-  }
-  node.children.forEach((child) => {
-    paths.push(...getAllDescendantPaths(child));
-  });
-  return paths;
-}
-
-interface TreeNodeProps {
-  node: TreeNode;
-  selectedTopics: Set<string>;
-  expandedNamespaces: Set<string>;
-  onToggleSelect: (path: string, selected: boolean) => void;
-  onToggleExpand: (path: string) => void;
-}
-
-function TreeNodeComponent({
-  node,
-  selectedTopics,
-  expandedNamespaces,
-  onToggleSelect,
-  onToggleExpand,
-}: TreeNodeProps): React.ReactElement {
-  const descendantPaths = useMemo(() => getAllDescendantPaths(node), [node]);
-  const selectedCount = descendantPaths.filter((p) => selectedTopics.has(p)).length;
-  const isFullySelected = selectedCount === descendantPaths.length && descendantPaths.length > 0;
-  const isPartiallySelected = selectedCount > 0 && selectedCount < descendantPaths.length;
-
-  const handleCheckboxChange = (checked: boolean) => {
-    onToggleSelect(node.fullPath, checked);
-  };
-
-  const handleExpandToggle = () => {
-    onToggleExpand(node.fullPath);
-  };
-
-  if (node.isLeaf) {
-    return (
-      <div className="flex items-center gap-2 py-1 pl-5" data-testid={`topic-leaf-${node.fullPath}`}>
-        <Checkbox
-          checked={selectedTopics.has(node.fullPath)}
-          onCheckedChange={handleCheckboxChange}
-        />
-        <span className="text-sm text-muted-foreground" data-testid={`topic-name-${node.fullPath}`}>
-          {node.name}
-        </span>
-      </div>
-    );
-  }
-
-  const isExpanded = expandedNamespaces.has(node.fullPath);
-
-  return (
-    <div className="select-none">
-      <div className="flex items-center gap-1 py-1">
-        <button
-          onClick={handleExpandToggle}
-          className="flex h-4 w-4 items-center justify-center rounded-sm hover:bg-accent"
-          data-testid={`topic-expand-${node.fullPath}`}
-          type="button"
-        >
-          {isExpanded ? (
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          ) : (
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          )}
-        </button>
-        <Checkbox
-          checked={isFullySelected}
-          indeterminate={isPartiallySelected}
-          onCheckedChange={handleCheckboxChange}
-        />
-        <span className="text-sm font-medium" data-testid={`topic-name-${node.fullPath}`}>
-          {node.name}
-        </span>
-      </div>
-      {isExpanded && (
-        <div className="pl-4" data-testid={`topic-children-${node.fullPath}`}>
-          {node.children.map((child) => (
-            <TreeNodeComponent
-              key={child.fullPath}
-              node={child}
-              selectedTopics={selectedTopics}
-              expandedNamespaces={expandedNamespaces}
-              onToggleSelect={onToggleSelect}
-              onToggleExpand={onToggleExpand}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function RecorderPanel({ context }: { context: PanelExtensionContext }): React.ReactElement {
   const [topics, setTopics] = useState<readonly Topic[]>([]);
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(() => {
     const saved = (context.initialState as { selectedTopics?: string[] })?.selectedTopics;
     return new Set(saved ?? []);
   });
-  const [expandedNamespaces, setExpandedNamespaces] = useState<Set<string>>(new Set());
   const [outputDirectory, setOutputDirectory] = useState(() => {
     const saved = (context.initialState as { outputDirectory?: string })?.outputDirectory;
     return saved ?? "~/rosbags";
@@ -259,62 +110,30 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
     return () => clearInterval(interval);
   }, [topics]);
 
-  const topicTree = useMemo(() => buildTopicTree(topics), [topics]);
-
-  const handleToggleSelect = useCallback(
-    (path: string, selected: boolean) => {
-      setSelectedTopics((prev) => {
-        const next = new Set(prev);
-
-        const toggleDescendants = (node: TreeNode) => {
-          const descendants = getAllDescendantPaths(node);
-          descendants.forEach((p) => {
-            if (selected) {
-              next.add(p);
-            } else {
-              next.delete(p);
-            }
-          });
-        };
-
-        const findNode = (nodes: TreeNode[], targetPath: string): TreeNode | null => {
-          for (const node of nodes) {
-            if (node.fullPath === targetPath) {
-              return node;
-            }
-            const found = findNode(node.children, targetPath);
-            if (found) return found;
-          }
-          return null;
-        };
-
-        const node = findNode(topicTree, path);
-        if (node) {
-          toggleDescendants(node);
-        } else {
-          if (selected) {
-            next.add(path);
-          } else {
-            next.delete(path);
-          }
-        }
-
-        return next;
-      });
-    },
-    [topicTree]
+  const availableTopicNames = useMemo(
+    () => new Set(topics.map((t) => t.name)),
+    [topics]
   );
 
-  const handleToggleExpand = useCallback((path: string) => {
-    setExpandedNamespaces((prev) => {
+  const recordableTopics = useMemo(
+    () => Array.from(selectedTopics).filter((t) => availableTopicNames.has(t)),
+    [selectedTopics, availableTopicNames]
+  );
+
+  const handleToggleTopic = useCallback((topic: string) => {
+    setSelectedTopics((prev) => {
       const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
+      if (next.has(topic)) {
+        next.delete(topic);
       } else {
-        next.add(path);
+        next.add(topic);
       }
       return next;
     });
+  }, []);
+
+  const handleClearAll = useCallback(() => {
+    setSelectedTopics(new Set());
   }, []);
 
   const callService = useCallback(
@@ -344,18 +163,18 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
   );
 
   const handleStart = useCallback(async () => {
-    if (selectedTopics.size === 0) return;
+    if (recordableTopics.length === 0) return;
     setIsLoading("start");
     setConnectionError(null);
     const response = await callService("/start_recording", {
       output_directory: outputDirectory,
-      topics: Array.from(selectedTopics),
+      topics: recordableTopics,
     });
     if (response?.success) {
-      // Successfully started - status updates will come via topic subscription
+      void response;
     }
     setIsLoading(null);
-  }, [callService, outputDirectory, selectedTopics, context]);
+  }, [callService, outputDirectory, recordableTopics]);
 
   const handlePause = useCallback(async () => {
     setIsLoading("pause");
@@ -372,12 +191,11 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
   const handleStop = useCallback(async () => {
     setIsLoading("stop");
     await callService("/stop_recording", {});
-    // Note: We keep the status subscription active for connection monitoring
     setIsLoading(null);
   }, [callService, context]);
 
   const isStartDisabled =
-    selectedTopics.size === 0 ||
+    recordableTopics.length === 0 ||
     recorderStatus.state === "recording" ||
     recorderStatus.state === "paused" ||
     companionStatus !== "connected";
@@ -502,27 +320,12 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
           <CardTitle className="text-base">Topics ({topics.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            className="max-h-[400px] overflow-auto rounded-md border p-2"
-            data-testid="topic-tree-root"
-          >
-            {topicTree.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground" data-testid="recorder-empty-state">
-                No topics available
-              </div>
-            ) : (
-              topicTree.map((node) => (
-                <TreeNodeComponent
-                  key={node.fullPath}
-                  node={node}
-                  selectedTopics={selectedTopics}
-                  expandedNamespaces={expandedNamespaces}
-                  onToggleSelect={handleToggleSelect}
-                  onToggleExpand={handleToggleExpand}
-                />
-              ))
-            )}
-          </div>
+          <TopicSelectorSection
+            topics={topics}
+            selectedTopics={selectedTopics}
+            onToggleTopic={handleToggleTopic}
+            onClearAll={handleClearAll}
+          />
         </CardContent>
       </Card>
     </div>
