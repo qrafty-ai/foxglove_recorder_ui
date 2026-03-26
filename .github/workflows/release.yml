@@ -3,6 +3,8 @@ name: Release
 on:
   push:
     branches: [main]
+    tags:
+      - "v*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,25 +26,25 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20.x
           cache: npm
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run tests
         run: npm test
-      
+
       - name: Build extension
         run: npm run build
-      
+
       - name: Package extension
         run: npm run package
-      
+
       - name: List generated files
         run: |
           echo "=== Build artifacts ==="
@@ -50,7 +52,14 @@ jobs:
           echo ""
           echo "=== Foxe package ==="
           ls -la *.foxe || echo "No .foxe file found"
-      
+
+      - name: Upload .foxe as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: foxglove-extension
+          path: "*.foxe"
+          if-no-files-found: error
+
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
