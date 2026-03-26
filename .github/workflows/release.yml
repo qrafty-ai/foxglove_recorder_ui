@@ -2,7 +2,6 @@ name: Release
 
 on:
   push:
-    branches: [main]
     tags:
       - "v*"
 
@@ -12,9 +11,6 @@ concurrency:
 
 permissions:
   contents: write
-  issues: write
-  pull-requests: write
-  id-token: write
 
 jobs:
   release:
@@ -25,7 +21,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -51,17 +46,10 @@ jobs:
           ls -la dist/
           echo ""
           echo "=== Foxe package ==="
-          ls -la *.foxe || echo "No .foxe file found"
+          ls -la *.foxe
 
-      - name: Upload .foxe as artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload .foxe to release
+        uses: softprops/action-gh-release@v2
         with:
-          name: foxglove-extension
-          path: "*.foxe"
-          if-no-files-found: error
-
-      - name: Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npx semantic-release
+          files: "*.foxe"
+          fail_on_unmatched_files: true
