@@ -2,10 +2,11 @@
 
 A Foxglove extension panel for controlling MCAP recording sessions with a ROS2 companion node.
 
+![MCAP Recorder Panel](assets/cover.png)
+
 ## Features
 
-- **Topic Tree Selection**: Browse available ROS topics in a collapsible namespace tree
-- **Subtree Selection**: Select entire topic namespaces with cascade support
+- **Topic Selection**: Browse available ROS topics.
 - **Recorder Controls**: Start, pause, resume, and stop recording
 - **Status Monitoring**: Real-time recorder status from companion node
 - **State Persistence**: Selected topics and output directory persist across sessions
@@ -16,6 +17,10 @@ This extension requires the **ROS2 companion node** to be running on your ROS2 s
 
 - **ROS2 Package**: [qrafty-ai/foxglove_recorder_ui_ros2](https://github.com/qrafty-ai/foxglove_recorder_ui_ros2)
 - Clone and build this package in your ROS2 workspace before using the extension
+- Start companion node:
+```bash
+ros2 run recorder_companion recorder_companion_node
+```
 
 ## Installation
 
@@ -83,20 +88,6 @@ npm test
 # Run type check
 npm run lint
 ```
-
-## Release Process
-
-This project uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning and releases:
-
-- **Patch release** (`v0.0.1` → `v0.0.2`): Commit with `fix:` prefix
-- **Minor release** (`v0.0.1` → `v0.1.0`): Commit with `feat:` prefix  
-- **Major release** (`v0.0.1` → `v1.0.0`): Commit with `BREAKING CHANGE:` in the body or `feat!:` prefix
-
-The release workflow automatically:
-1. Runs tests and builds the extension
-2. Generates a changelog
-3. Creates a GitHub release with the `.foxe` file attached
-4. Commits version bumps back to the repository
 
 ## Project Structure
 
