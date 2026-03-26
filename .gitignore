@@ -6,3 +6,7 @@ build/
 install/
 log/
 node_modules/
+
+# Build artifacts
+dist/
+*.foxe
