@@ -53,10 +53,14 @@ export function RecorderPanel({ context }: { context: PanelExtensionContext }): 
   useLayoutEffect(() => {
     context.watch("topics");
     context.watch("currentFrame");
+    context.watch("colorScheme");
     context.subscribe([{ topic: STATUS_TOPIC }]);
 
     context.onRender = (renderState, done) => {
       setTopics(renderState.topics ?? []);
+
+      const colorScheme = renderState.colorScheme ?? "dark";
+      context.panelElement.classList.toggle("dark", colorScheme === "dark");
 
       const statusMessages = renderState.currentFrame?.filter(
         (msg) => msg.topic === STATUS_TOPIC
