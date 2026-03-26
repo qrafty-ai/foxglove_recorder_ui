@@ -1,5 +1,0 @@
-string output_directory
-string[] topics
----
-bool success
-string message
